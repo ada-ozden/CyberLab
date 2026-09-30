@@ -1,0 +1,31 @@
+services:
+
+  juice-shop:
+    image: bkimminich/juice-shop
+    container_name: cyberlab-juice-shop
+    ports:
+      - "3000:3000"
+    networks:
+      - cyberlab
+
+  dvwa:
+    image: vulnerables/web-dvwa
+    container_name: cyberlab-dvwa
+    ports:
+      - "8080:80"
+    networks:
+      - cyberlab
+  honeypot:
+    build:
+      context: ./honeypot
+    container_name: cyberlab-honeypot
+    ports:
+      - "2222:2222"
+    volumes:
+      - ../data/logs:/app/logs
+    networks:
+      - cyberlab
+
+networks:
+  cyberlab:
+    driver: bridge
