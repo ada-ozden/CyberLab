@@ -4,7 +4,8 @@ services:
     image: bkimminich/juice-shop
     container_name: cyberlab-juice-shop
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
+    restart: unless-stopped
     networks:
       - cyberlab
 
@@ -12,9 +13,11 @@ services:
     image: vulnerables/web-dvwa
     container_name: cyberlab-dvwa
     ports:
-      - "8080:80"
+      - "127.0.0.1:8080:80"
+    restart: unless-stopped
     networks:
       - cyberlab
+
   honeypot:
     build:
       context: ./honeypot
@@ -23,6 +26,7 @@ services:
       - "2222:2222"
     volumes:
       - ../data/logs:/app/logs
+    restart: unless-stopped
     networks:
       - cyberlab
 

@@ -1,10 +1,17 @@
 FROM python:3.12-slim
 
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
-COPY honeypot.py .
+# Run as an unprivileged user instead of root.
+RUN useradd --create-home honeypot \
+    && mkdir -p /app/logs \
+    && chown -R honeypot:honeypot /app
 
-RUN mkdir -p /app/logs
+COPY --chown=honeypot:honeypot honeypot.py .
+
+USER honeypot
 
 EXPOSE 2222
 

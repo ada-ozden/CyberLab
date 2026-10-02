@@ -7,3 +7,4 @@ data/logs/
 *.pcap
 *.pcapng
 data/scans/*.json
+!data/scans/.gitkeep
