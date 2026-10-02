@@ -8,3 +8,6 @@ data/logs/
 *.pcapng
 data/scans/*.json
 !data/scans/.gitkeep
+data/*.db
+data/*.db-wal
+data/*.db-shm

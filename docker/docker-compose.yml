@@ -29,6 +29,23 @@ services:
     restart: unless-stopped
     networks:
       - cyberlab
+  capture:
+    image: nicolaka/netshoot
+    container_name: cyberlab-capture
+    profiles: ["capture"]          # only starts when you ask for it
+    network_mode: host             # on Docker Desktop this is the Linux VM, which sees every lab network
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    command: ["tcpdump", "-i", "any", "-n", "-G", "300", "-w", "/pcaps/lab_%Y%m%d_%H%M%S.pcap"]
+    volumes:
+      - ../data/pcaps:/pcaps
+  attacker:
+    image: nicolaka/netshoot
+    profiles: ["attack"]           # only runs when you ask for it
+    networks:
+      - cyberlab
+    command: ["nmap", "-sS", "-p", "1-1000", "cyberlab-honeypot", "cyberlab-dvwa", "cyberlab-juice-shop"]
 
 networks:
   cyberlab:
