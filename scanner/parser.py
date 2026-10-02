@@ -3,6 +3,16 @@ import xml.etree.ElementTree as ET
 from .models import Host, Port
 
 
+def _get_ip(host_element):
+    # A host can have several <address> tags (ipv4, ipv6, mac).
+    # Only the ipv4/ipv6 ones are IP addresses.
+    for address in host_element.findall("address"):
+        if address.get("addrtype") in ("ipv4", "ipv6"):
+            return address.get("addr")
+
+    return None
+
+
 def parse_nmap_xml(xml_output: str) -> list[Host]:
     root = ET.fromstring(xml_output)
     hosts = []
@@ -13,12 +23,7 @@ def parse_nmap_xml(xml_output: str) -> list[Host]:
         if status is not None and status.get("state") != "up":
             continue
 
-        address = host_element.find("address")
-
-        if address is None:
-            continue
-
-        ip = address.get("addr")
+        ip = _get_ip(host_element)
 
         if not ip:
             continue
