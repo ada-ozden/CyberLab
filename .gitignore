@@ -6,3 +6,4 @@ data/pcaps/
 data/logs/
 *.pcap
 *.pcapng
+data/scans/*.json
