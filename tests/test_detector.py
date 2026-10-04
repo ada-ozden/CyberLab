@@ -4,6 +4,7 @@ from analyzer.detector import (
     DEFAULT_IGNORED_NETWORKS,
     detect_honeypot_bursts,
     detect_port_scans,
+    detect_service_probing,
     is_ignored,
     parse_networks,
     run_detectors,
@@ -11,6 +12,7 @@ from analyzer.detector import (
 )
 from analyzer.models import Alert, Flow
 from common.database import connect, count_rows, insert_flows, save_alerts
+from .test_payloads import NMAP_SCAN_PAYLOADS, UNKNOWN_PROBES
 
 SCANNER = "172.18.0.9"
 TARGET = "172.18.0.2"
@@ -154,6 +156,91 @@ def test_spread_out_connections_are_not_a_burst(db):
 
     assert detect_honeypot_bursts(db, min_connections=10, window_seconds=60) == []
 
+# ---------- service probing ----------
+
+JDWP = "JDWP-Handshake\x00\x00\x00\x0b"
+RMI = "JRMI\x00\x02K"
+MSSQL = "\x12\x01\x004\x00\x00"
+SIP = "OPTIONS sip:nm SIP/2.0\r\nFrom: <sip:nm@nm>;tag=root\r\n"
+
+
+def add_payloads(db, src_ip, messages, start=100.0, step=0.5):
+    with db:
+        db.executemany(
+            "INSERT INTO honeypot_events (ts, event, src_ip, src_port, data) VALUES (?, 'data', ?, 1, ?)",
+            [(start + i * step, src_ip, text) for i, text in enumerate(messages)],
+        )
+
+
+def test_several_different_protocols_in_a_short_time_is_service_probing(db):
+    add_payloads(db, "172.18.0.9", [JDWP, RMI, MSSQL, SIP])
+
+    [alert] = detect_service_probing(db, min_protocols=3, window_seconds=60)
+
+    assert alert.rule == "service_probing"
+    assert alert.src_ip == "172.18.0.9"
+    assert alert.severity == "medium"
+    assert alert.evidence["distinct_protocols"] == 4
+    assert "Java RMI call" in alert.evidence["protocols"]
+    assert "Nmap" in alert.description
+
+
+def test_repeating_the_same_probe_is_not_service_probing(db):
+    add_payloads(db, "172.18.0.9", [RMI] * 30)
+
+    assert detect_service_probing(db, min_protocols=3, window_seconds=60) == []
+
+
+def test_probes_spread_over_a_long_time_are_not_flagged(db):
+    add_payloads(db, "172.18.0.9", [JDWP, RMI, MSSQL, SIP], step=500.0)
+
+    assert detect_service_probing(db, min_protocols=3, window_seconds=60) == []
+
+
+def test_ordinary_visitors_are_not_flagged(db):
+    ordinary = ["GET / HTTP/1.1\r\nHost: lab\r\n\r\n", "SSH-2.0-OpenSSH_9.6\r\n", "hello\n", "POST /login HTTP/1.1\r\n"]
+    add_payloads(db, "172.18.0.9", ordinary)
+
+    assert detect_service_probing(db, min_protocols=3, window_seconds=60) == []
+
+
+def test_unrecognised_data_is_never_counted_as_a_probe(db):
+    add_payloads(db, "172.18.0.9", UNKNOWN_PROBES)
+
+    assert detect_service_probing(db, min_protocols=1, window_seconds=60) == []
+
+
+def test_each_visitor_is_judged_separately(db):
+    add_payloads(db, "172.18.0.9", [JDWP, RMI])
+    add_payloads(db, "172.18.0.8", [MSSQL, SIP])   # two protocols each: below the limit of 3
+
+    assert detect_service_probing(db, min_protocols=3, window_seconds=60) == []
+
+
+def test_service_probing_from_an_ignored_network_is_skipped(db):
+    add_payloads(db, "192.168.65.1", [JDWP, RMI, MSSQL, SIP])
+    networks = parse_networks(DEFAULT_IGNORED_NETWORKS)
+
+    assert detect_service_probing(db, min_protocols=3, window_seconds=60, ignored=networks) == []
+
+
+def test_the_real_nmap_scan_captured_in_the_lab_is_detected(db):
+    # The 15 messages the honeypot received from `nmap -sV` (see tests/test_payloads.py).
+    messages = [text for text, _ in NMAP_SCAN_PAYLOADS] + UNKNOWN_PROBES
+    add_payloads(db, "172.18.0.1", messages, step=0.3)
+
+    alerts = run_detectors(db)
+    [alert] = [alert for alert in alerts if alert.rule == "service_probing"]
+
+    assert alert.evidence["distinct_protocols"] == 9
+    assert alert.evidence["messages"] == len(NMAP_SCAN_PAYLOADS)   # only the recognised ones count
+
+
+def test_service_probing_alerts_are_not_duplicated(db):
+    add_payloads(db, "172.18.0.9", [JDWP, RMI, MSSQL, SIP])
+
+    assert save_alerts(db, run_detectors(db)) == 1
+    assert save_alerts(db, run_detectors(db)) == 0
 
 # ---------- saving alerts ----------
 

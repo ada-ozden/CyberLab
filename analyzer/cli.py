@@ -74,6 +74,7 @@ def run_detect(args):
             connection,
             min_ports=args.min_ports,
             min_connections=args.min_connections,
+            min_protocols=args.min_protocols,
             window_seconds=args.window,
             ignored_networks=ignored,
         )
@@ -134,6 +135,7 @@ def main():
     detect = subparsers.add_parser("detect", parents=[common], help="run the threat detector")
     detect.add_argument("--min-ports", type=int, default=10, help="ports probed to call it a scan")
     detect.add_argument("--min-connections", type=int, default=10, help="honeypot connections to call it a burst")
+    detect.add_argument("--min-protocols", type=int, default=3, help="different protocols probed to call it service scanning")
     detect.add_argument("--window", type=int, default=60, help="window length in seconds")
     detect.add_argument(
         "--ignore", action="append", metavar="CIDR",

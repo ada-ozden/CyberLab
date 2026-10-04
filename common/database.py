@@ -71,7 +71,18 @@ def connect(db_path=DEFAULT_DB_PATH):
     connection.executescript(SCHEMA)
 
     return connection
+def connect_readonly(db_path=DEFAULT_DB_PATH):
+    # For the dashboard: never creates, migrates or changes anything.
+    db_path = Path(db_path)
 
+    if not db_path.is_file():
+        raise FileNotFoundError(f"database not found: {db_path}")
+
+    connection = sqlite3.connect(db_path)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA query_only=ON")  # any INSERT/UPDATE/DELETE now raises an error
+
+    return connection
 
 def insert_flows(connection, flows, source):
     rows = [

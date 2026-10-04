@@ -1,6 +1,8 @@
 import ipaddress
 from itertools import groupby
 
+from common.payloads import describe_payload
+
 from .models import Alert
 
 # Docker Desktop's own traffic between its Linux VM and Windows. It is not lab traffic.
@@ -140,11 +142,71 @@ def detect_honeypot_bursts(connection, min_connections=10, window_seconds=60, ig
 
     return alerts
 
+def detect_service_probing(connection, min_protocols=3, window_seconds=60, ignored=()):
+    # One source IP sending the honeypot messages in several DIFFERENT protocols, quickly.
+    # A normal visitor speaks one protocol; a scanner doing version detection (for example
+    # Nmap -sV) tries many to find out what is listening. Repeating the same probe does not
+    # count: only the number of distinct protocols matters.
+    rows = connection.execute(
+        """
+        SELECT src_ip, ts, data
+        FROM honeypot_events
+        WHERE event = 'data' AND data IS NOT NULL
+        ORDER BY src_ip, ts
+        """
+    )
+
+    alerts = []
+
+    for src_ip, group in groupby(rows, key=lambda row: row["src_ip"]):
+        if is_ignored(src_ip, ignored):
+            continue
+
+        points = []  # (time, protocol) for every message that is a protocol probe
+
+        for row in group:
+            description = describe_payload(row["data"])
+
+            if description.service_probe:
+                points.append((row["ts"], description.label))
+
+        count, start, end = strongest_window(points, window_seconds)
+
+        if count < min_protocols:
+            continue
+
+        # Count every probe in the whole window, including repeats that arrive after the moment
+        # the last NEW protocol appeared (`end`). The set of protocols cannot grow past `end`:
+        # a later window would otherwise have scored higher.
+        in_window = [label for time, label in points if start <= time <= start + window_seconds]
+
+        alerts.append(
+            Alert(
+                ts=start,
+                rule="service_probing",
+                severity="medium",  # reconnaissance, not an attack: the visitor is only looking
+                src_ip=src_ip,
+                description=(
+                    f"{src_ip} sent {count} different protocol probes to the honeypot within "
+                    f"{end - start:.1f}s - typical of service detection (e.g. Nmap -sV)"
+                ),
+                evidence={
+                    "distinct_protocols": count,
+                    "messages": len(in_window),
+                    "protocols": sorted(set(in_window)),
+                    "window_start": start,
+                    "window_end": end,
+                },
+            )
+        )
+
+    return alerts
 
 def run_detectors(
     connection,
     min_ports=10,
     min_connections=10,
+    min_protocols=3,
     window_seconds=60,
     ignored_networks=DEFAULT_IGNORED_NETWORKS,
 ):
@@ -152,5 +214,6 @@ def run_detectors(
 
     alerts = detect_port_scans(connection, min_ports, window_seconds, ignored)
     alerts += detect_honeypot_bursts(connection, min_connections, window_seconds, ignored)
+    alerts += detect_service_probing(connection, min_protocols, window_seconds, ignored)
 
     return sorted(alerts, key=lambda alert: alert.ts)
