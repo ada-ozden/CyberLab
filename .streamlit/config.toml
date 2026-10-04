@@ -1,6 +1,10 @@
 [browser]
 gatherUsageStats = false
 
+[server]
+# The dashboard has no login. Listen on this PC only, not on the whole network.
+address = "localhost"
+
 [theme.light]
 primaryColor = "#2a78d6"
 

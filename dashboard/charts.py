@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import plotly.graph_objects as go
 
@@ -83,10 +83,32 @@ def time_bars(rows, value_key, bucket, name, dark=False):
     return _style(fig, dark, x_title="Time (UTC)", y_title=name.capitalize())
 
 
-def time_line(rows, value_key, name, dark=False):
+def fill_gaps(rows, value_key, bucket, limit=2000):
+    # Time buckets with no events are missing from the data. A line drawn straight across such a
+    # gap would look like a slow climb, so add the empty buckets back as zeros.
+    by_bucket = {row["bucket"]: row[value_key] for row in rows}
+    first, last = min(by_bucket), max(by_bucket)
+
+    if (last - first) / bucket > limit:
+        return rows  # absurdly many buckets: leave the data as it is
+
+    filled = []
+    moment = first
+
+    while moment <= last:
+        filled.append({"bucket": moment, value_key: by_bucket.get(moment, 0)})
+        moment += bucket
+
+    return filled
+
+
+def time_line(rows, value_key, name, dark=False, bucket=None):
     # Single-series line over time (connection attempts).
     if not rows:
         return None
+
+    if bucket:
+        rows = fill_gaps(rows, value_key, bucket)
 
     colour = (DARK if dark else LIGHT)["series"]
 
@@ -102,7 +124,18 @@ def time_line(rows, value_key, name, dark=False):
     )
 
     fig.update_layout(hovermode="x unified")
-    return _style(fig, dark, x_title="Time (UTC)", y_title=name.capitalize())
+    _style(fig, dark, x_title="Time (UTC)", y_title=name.capitalize())
+
+    # Counts start at zero, so a line never exaggerates a small change.
+    fig.update_yaxes(rangemode="tozero")
+
+    # One lonely point would zoom the time axis into milliseconds: show a sensible span instead.
+    if len(rows) == 1 and bucket:
+        centre = utc(rows[0]["bucket"])
+        padding = timedelta(seconds=bucket)
+        fig.update_xaxes(range=[centre - padding, centre + padding])
+
+    return fig
 
 
 def bars_horizontal(labels, values, name, dark=False):

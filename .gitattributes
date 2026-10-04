@@ -1,4 +1,7 @@
+# Let git normalise line endings, but keep files that run in Linux containers as LF.
 * text=auto
 *.py text eol=lf
 *.yml text eol=lf
+*.toml text eol=lf
+*.ini text eol=lf
 Dockerfile text eol=lf

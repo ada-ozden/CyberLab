@@ -1,13 +1,22 @@
+# Python
 .venv/
 __pycache__/
 *.pyc
+.pytest_cache/
+
+# Secrets
 .env
+.streamlit/secrets.toml
+
+# Captured traffic and logs (large, and may contain sensitive data)
 data/pcaps/
 data/logs/
 *.pcap
 *.pcapng
-data/scans/*.json
-!data/scans/.gitkeep
+
+# Generated data
 data/*.db
 data/*.db-wal
 data/*.db-shm
+data/scans/*.json
+!data/scans/.gitkeep

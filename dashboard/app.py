@@ -166,8 +166,7 @@ def page_network(data, dark):
             )
 
     st.subheader("Connection attempts over time")
-    show_chart(charts.time_line(data["attempts_over_time"], "attempts", "connection attempts", dark), "No connection attempts in this period.")
-
+    show_chart(charts.time_line(data["attempts_over_time"], "attempts", "connection attempts", dark, data["bucket"]),"No connection attempts in this period.",)
     with st.expander("Show data"):
         show_table([{"Time (UTC)": fmt_time(r["bucket"]), "Attempts": r["attempts"]} for r in data["attempts_over_time"]])
 
@@ -193,7 +192,7 @@ def page_honeypot(data, dark):
         with st.expander("Show data"):
             show_table([{"Source": r["src_ip"], "Connections": r["connections"], "Payloads": r["payloads"]} for r in visitors])
 
-        st.subheader("What visitors sent")
+    st.subheader("What visitors sent")
 
     summary = data["payload_summary"]
 

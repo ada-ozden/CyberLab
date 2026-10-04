@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fpdf import FPDF
 from fpdf.enums import XPos, YPos
 
-from .data import display_payload, port_label
+from .data import port_label
 
 BLUE = (42, 120, 214)   # chart series colour
 INK = (30, 30, 30)
@@ -218,4 +218,5 @@ def build_report(data, generated_at=None):
             _note(pdf, f"Showing the latest 15 of {len(data['payloads'])} messages.")
     else:
         _note(pdf, "No payloads were sent to the honeypot in this period.")
+
     return bytes(pdf.output())

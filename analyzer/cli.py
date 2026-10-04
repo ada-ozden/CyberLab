@@ -7,6 +7,7 @@ from common.database import DEFAULT_DB_PATH, connect, count_rows, insert_flows, 
 from .detector import DEFAULT_IGNORED_NETWORKS, run_detectors
 from .log_parser import DEFAULT_HONEYPOT_LOG, ingest_honeypot_log
 from .pcap_parser import parse_pcap
+from .pipeline import DEFAULT_PCAP_DIRECTORY, update_all
 
 
 def print_summary(result, top=10):
@@ -66,26 +67,57 @@ def run_stats(args):
 
     return 0
 
-def run_detect(args):
-    ignored = args.ignore or DEFAULT_IGNORED_NETWORKS
 
-    with connect(args.db) as connection:
-        alerts = run_detectors(
-            connection,
-            min_ports=args.min_ports,
-            min_connections=args.min_connections,
-            min_protocols=args.min_protocols,
-            window_seconds=args.window,
-            ignored_networks=ignored,
-        )
-        new = save_alerts(connection, alerts)
+def detector_options(args):
+    # The same detector settings are used by `detect` and `update`.
+    return {
+        "min_ports": args.min_ports,
+        "min_connections": args.min_connections,
+        "min_protocols": args.min_protocols,
+        "window_seconds": args.window,
+        "ignored_networks": args.ignore or DEFAULT_IGNORED_NETWORKS,
+    }
 
-    print(f"{len(alerts)} alerts found ({new} new)")
 
+def print_alerts(alerts):
     for alert in alerts:
         print(f"  [{alert.severity.upper():<6}] {alert.rule:<15} {alert.description}")
 
+
+def run_detect(args):
+    with connect(args.db) as connection:
+        alerts = run_detectors(connection, **detector_options(args))
+        new = save_alerts(connection, alerts)
+
+    print(f"{len(alerts)} alerts found ({new} new)")
+    print_alerts(alerts)
+
     return 0
+
+
+def run_update(args):
+    with connect(args.db) as connection:
+        summary = update_all(connection, args.pcaps, args.logs, detector_options(args))
+
+    failed = len(summary.captures_failed)
+
+    print(
+        f"Captures:  {summary.captures_new} new, {summary.captures_changed} grown, "
+        f"{summary.captures_unchanged} unchanged, {failed} unreadable"
+    )
+    print(f"Flows:     {summary.flows_stored:,} stored")
+    print(f"Honeypot:  {summary.honeypot_events:,} new events ({summary.honeypot_skipped} lines skipped)")
+    print(f"Alerts:    {len(summary.alerts)} found, {summary.alerts_new} new")
+
+    if summary.alerts_new:
+        print("\nAll alerts (new ones were just added):")
+        print_alerts(summary.alerts)
+
+    for name, error in summary.captures_failed:
+        print(f"\nCould not read {name}: {error}\n  (it will be tried again next time)")
+
+    return 0
+
 
 def run_sql(args):
     query = args.query.strip()
@@ -132,16 +164,28 @@ def main():
 
     stats = subparsers.add_parser("stats", parents=[common], help="show row counts")
     stats.set_defaults(run=run_stats)
-    detect = subparsers.add_parser("detect", parents=[common], help="run the threat detector")
-    detect.add_argument("--min-ports", type=int, default=10, help="ports probed to call it a scan")
-    detect.add_argument("--min-connections", type=int, default=10, help="honeypot connections to call it a burst")
-    detect.add_argument("--min-protocols", type=int, default=3, help="different protocols probed to call it service scanning")
-    detect.add_argument("--window", type=int, default=60, help="window length in seconds")
-    detect.add_argument(
+
+    # Detector settings shared by `detect` and `update`.
+    detector = argparse.ArgumentParser(add_help=False)
+    detector.add_argument("--min-ports", type=int, default=10, help="ports probed to call it a scan")
+    detector.add_argument("--min-connections", type=int, default=10, help="honeypot connections to call it a burst")
+    detector.add_argument("--min-protocols", type=int, default=3, help="different protocols probed to call it service scanning")
+    detector.add_argument("--window", type=int, default=60, help="window length in seconds")
+    detector.add_argument(
         "--ignore", action="append", metavar="CIDR",
         help="network to ignore, e.g. 192.168.65.0/24 (repeatable; replaces the default)",
     )
+
+    detect = subparsers.add_parser("detect", parents=[common, detector], help="run the threat detector")
     detect.set_defaults(run=run_detect)
+
+    update = subparsers.add_parser(
+        "update", parents=[common, detector], help="load new captures and logs, then run the detector"
+    )
+    update.add_argument("--pcaps", default=DEFAULT_PCAP_DIRECTORY, help="folder with .pcap files")
+    update.add_argument("--logs", default=DEFAULT_HONEYPOT_LOG, help="honeypot log file")
+    update.set_defaults(run=run_update)
+
     sql = subparsers.add_parser("sql", parents=[common], help="run a SELECT query")
     sql.add_argument("query")
     sql.set_defaults(run=run_sql)
